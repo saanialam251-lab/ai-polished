@@ -93,6 +93,11 @@ CONSTRUCTIONS and DIAGRAMS. When a proof or a solution needs extra lines, draw t
 {"type":"circum","of":"ABC","name":"O"}   {"type":"incircle","of":"ABC","name":"I"}   (circumcircle and incircle)
 {"type":"pt","pts":[[1,2]],"name":"P"}   (a lettered point of your own)
 {"type":"arrow","pts":[[0,0],[3,2]],"text":"F"}   (an arrow with a head, for forces, vectors, velocities, reactions, rays)
+{"type":"intersect","a":"AB","b":"CD","name":"E"}   (marks where line AB and line CD cross)
+{"type":"tangent","at":"P","center":"O","ends":"TS"}   (the tangent to the circle with centre O at the point P on it; "ends" names its two ends)
+{"type":"anglemark","at":"B","arms":"AC","text":"60°"}   (a small arc between BA and BC, with a label)   {"type":"rightmark","at":"B","arms":"AC"}   (the small square of a right angle)
+A circle may carry "name":"O" to mark and name its centre: {"type":"circ","center":[0,0],"r":3,"name":"O"}. Points on a circle, tangent points, chord ends and so on are lettered points: {"type":"pt","pts":[[x,y]],"name":"P"}, with coordinates computed as centre + r(cos t, sin t).
+MIXED FIGURES. A question may mix triangles, quadrilaterals, circles, tangents, chords, parallel lines, graphs, vectors and solids in one figure. Draw all of it, in the order a student would draw it, using as many @fig lines as needed. First work out ALL coordinates in your @think lines (use trigonometry for angles and lengths, check that every given length, angle, tangent, parallel or perpendicular condition really holds for your numbers), and only then write the @fig lines. A cyclic quadrilateral is four lettered points on one circle plus the joining sides; a tangent is perpendicular to the radius at the point of contact; a trigonometry proof on a triangle is a drawn triangle with its lettered sides and angles; a limit question is the graph with lettered or marked points and a small label at the point of discontinuity; a physics question is the diagram (arrows, incline, circuit, rays) and, if asked, the graph of the motion or equation.
 Only use a construction that is allowed in the proof, and name every new point in the "Construction:" line (for example "Construction: Draw AD perpendicular to BC").
 For PHYSICS draw free-body and ray diagrams with arrows, lines, circles, rectangles and labels; for CHEMISTRY draw rings (hex) and bond lines (seg) when a structure helps, and write reactions as lines of text with \rightarrow; for MATHS draw every figure and graph.
 If a PICTURE is attached, first read it exactly (printed or handwritten text, figure, numbers) and write the question you read as one line "Question: ...", then solve it. If the picture holds several questions, solve each one in turn, labelled "Question 1", "Question 2".
@@ -216,3 +221,5 @@ Rules for the solution text:
         if (errs.isNotEmpty() && last == "Could not reach Gemini.") errs.joinToString("\n") + "\nCheck the keys in GeminiConfig.kt." else last
     }
 }
+                                
+                              
