@@ -1,18 +1,23 @@
 package com.aismartmath.board.board
 
 /**
- * PUT YOUR OWN FREE GEMINI API KEYS HERE (get them at https://aistudio.google.com/apikey).
+ * PUT YOUR OWN API KEYS HERE. Fill any of them; leave the others as "".
+ * The app tries them in this order: OpenAI key 1, OpenAI key 2, Gemini key 1, Gemini key 2,
+ * and moves to the next one automatically when a key is refused or has run out.
  *
- *   API_KEY_1 = your first key
- *   API_KEY_2 = your second key (optional). It is used automatically when the first key has run out of its free
- *               limit or is refused. Leave it "" if you only have one.
+ * Gemini keys: https://aistudio.google.com/apikey
+ * OpenAI keys: https://platform.openai.com/api-keys  (the OpenAI API needs credit on platform.openai.com;
+ *              a ChatGPT Plus subscription does not include it)
  *
- * There is no key box inside the app any more; this is the only place.
- *
- * Careful: if your GitHub repository is public, do not commit real keys here — Google disables keys found on
- * GitHub. Use a private repository.
+ * Careful: if your GitHub repository is public, do not commit real keys here. Use a private repository.
  */
 object GeminiConfig {
-    const val API_KEY_1 = "AQ.Ab8RN6LFKhDrPKZYgmfK0A3DLugzRlo_5KtrwGTJ8-SWmGkEvg"
-    const val API_KEY_2 = "AQ.Ab8RN6LAZQt74n2WZ37E_mX4srmhQPcnO7gHVQHvJev6aYZqUg"
+    const val API_KEY_1 = "AQ.Ab8RN6JmUiLV9rAC4ej3kr-jaGt6g2rs-3XDXxI2j-ZnmsjSQQ"
+    const val API_KEY_2 = "AQ.Ab8RN6IGQWIh6dsmdPVHCH7QUOOIzdNABUHbjXZlBVxIlDRypg"
+
+    const val OPENAI_KEY_1 = "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"
+    const val OPENAI_KEY_2 = "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"
+
+    /** The OpenAI model to use. If it is refused, gpt-4o-mini is tried next. */
+    const val OPENAI_MODEL = "gpt-4o"
 }
