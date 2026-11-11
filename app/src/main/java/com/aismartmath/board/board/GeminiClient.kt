@@ -20,7 +20,12 @@ object GeminiClient {
     const val CHUNK = 1
 
     /** The keys written in GeminiConfig.kt, empty ones left out. */
-    fun keys(): List<String> = listOf(GeminiConfig.API_KEY_1, GeminiConfig.API_KEY_2).map { it.trim() }.filter { it.isNotEmpty() }
+    fun geminiKeys(): List<String> = listOf(GeminiConfig.API_KEY_1, GeminiConfig.API_KEY_2).map { it.trim() }.filter { it.isNotEmpty() }
+
+    fun openaiKeys(): List<String> = listOf(GeminiConfig.OPENAI_KEY_1, GeminiConfig.OPENAI_KEY_2).map { it.trim() }.filter { it.isNotEmpty() }
+
+    /** Every key written in GeminiConfig.kt, OpenAI or Gemini. Empty means nothing is set up yet. */
+    fun keys(): List<String> = openaiKeys() + geminiKeys()
 
     private fun systemPrompt(subject: String, hasPicture: Boolean): String {
         val focus = when (subject) {
@@ -124,14 +129,14 @@ Rules for the solution text:
      * Streams the answer. [onPiece] is called (on a background thread) with THOUGHT for Gemini's own thinking summary and
      * CHUNK for pieces of the answer. Returns null when it finished, or the message to show the student.
      */
-    suspend fun stream(
+    private suspend fun streamGemini(
         subject: String,
         question: String,
         picture: Bitmap?,
         onPiece: (Int, String) -> Unit,
     ): String? = withContext(Dispatchers.IO) {
-        val ks = keys()
-        if (ks.isEmpty()) return@withContext "No API key yet. Open GeminiConfig.kt and put your Gemini key in API_KEY_1."
+        val ks = geminiKeys()
+        if (ks.isEmpty()) return@withContext "No Gemini key set."
         var last = "Could not reach Gemini."
         val errs = ArrayList<String>()
         keyLoop@ for ((ki, key) in ks.withIndex()) {
@@ -195,7 +200,7 @@ Rules for the solution text:
                             if (!line.startsWith("data:")) continue
                             val payload = line.substring(5).trim()
                             if (payload.isEmpty() || payload == "[DONE]") continue
-                            val j = try { JSONObject(payload) } catch (e: Exception) { continue }
+                            val j = try { JSONObject(payload) }
                             val ps = j.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts") ?: continue
                             for (i in 0 until ps.length()) {
                                 val p = ps.getJSONObject(i)
@@ -220,6 +225,154 @@ Rules for the solution text:
         }
         if (errs.isNotEmpty() && last == "Could not reach Gemini.") errs.joinToString("\n") + "\nCheck the keys in GeminiConfig.kt." else last
     }
+ 
+    private val OPENAI_BASE = listOf("gpt-4.1", "gpt-4o", "gpt-4o-mini")
+ 
+    /** Newest chat models this key may use, found by asking OpenAI. Used when the usual model names are refused. */
+    private fun discoverOpenAiModels(key: String): List<String> {
+        return try {
+            val con = URL("https://api.openai.com/v1/models").openConnection() as HttpURLConnection
+            con.connectTimeout = 20000
+            con.readTimeout = 30000
+            con.setRequestProperty("Authorization", "Bearer $key")
+            if (con.responseCode !in 200..299) return emptyList()
+            val arr = JSONObject(con.inputStream.bufferedReader().use { it.readText() }).optJSONArray("data") ?: return emptyList()
+            val bad = listOf("audio", "realtime", "image", "tts", "transcribe", "search", "instruct", "embed", "moderation", "whisper", "dall", "sora", "codex", "deep-research", "computer")
+            val found = ArrayList<Pair<Long, String>>()
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val id = o.optString("id")
+                if (id.startsWith("gpt-") && bad.none { id.contains(it) }) found.add(o.optLong("created", 0L) to id)
+            }
+            found.sortedByDescending { it.first }.map { it.second }.take(4)
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+ 
+    /** OpenAI (ChatGPT) keys. Returns null when an answer was streamed, otherwise what went wrong. */
+    private fun streamOpenAI(subject: String, question: String, picture: Bitmap?, onPiece: (Int, String) -> Unit): String? {
+        val errs = ArrayList<String>()
+        keyLoop@ for ((ki, key) in openaiKeys().withIndex()) {
+            if (key.length < 20 || key.any { it.isWhitespace() || it == '"' || it == '\'' }) {
+                errs.add("OpenAI key ${ki + 1} looks wrong (${key.length} characters; spaces, quotes and line breaks are not allowed). Copy the whole key again.")
+                continue@keyLoop
+            }
+            val chosen = GeminiConfig.OPENAI_MODEL.trim()
+            var models = if (chosen.isNotEmpty()) listOf(chosen) + OPENAI_BASE else OPENAI_BASE
+            var discovered = false
+            while (true) {
+                var modelProblem = ""
+                for (m in models) {
+                    var got = false
+                    try {
+                        val con = URL("https://api.openai.com/v1/chat/completions").openConnection() as HttpURLConnection
+                        con.requestMethod = "POST"
+                        con.connectTimeout = 20000
+                        con.readTimeout = 120000
+                        con.doOutput = true
+                        con.setRequestProperty("Content-Type", "application/json")
+                        con.setRequestProperty("Authorization", "Bearer $key")
+                        val user: Any = if (picture == null) question else JSONArray()
+                            .put(JSONObject().put("type", "text").put("text", question))
+                            .put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", "data:image/jpeg;base64," + toJpegBase64(picture))))
+                        val body = JSONObject()
+                            .put("model", m)
+                            .put("stream", true)
+                            .put("max_completion_tokens", 16000)
+                            .put(
+                                "messages",
+                                JSONArray()
+                                    .put(JSONObject().put("role", "system").put("content", systemPrompt(subject, picture != null)))
+                                    .put(JSONObject().put("role", "user").put("content", user)),
+                            )
+                        con.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+                        val code = con.responseCode
+                        if (code !in 200..299) {
+                            val txt = con.errorStream?.bufferedReader()?.use { it.readText() } ?: ""
+                            val msg = try { JSONObject(txt).getJSONObject("error").optString("message") } catch (e: Exception) { txt.take(160) }
+                            if (code == 401) {
+                                errs.add("OpenAI key ${ki + 1} refused: $msg")
+                                continue@keyLoop
+                            }
+                            if (code == 429) {
+                                errs.add(
+                                    "OpenAI key ${ki + 1}: " +
+                                        (if (txt.contains("insufficient_quota")) "no credit left on this account (add billing at platform.openai.com)." else "too many requests, wait a minute."),
+                                )
+                                continue@keyLoop
+                            }
+                            if (code == 400 || code == 403 || code == 404) {
+                                modelProblem = "$m: $msg"
+                                continue
+                            }
+                            errs.add("OpenAI error $code: $msg")
+                            continue
+                        }
+                        con.inputStream.bufferedReader(Charsets.UTF_8).use { r ->
+                            while (true) {
+                                val line = r.readLine() ?: break
+                                if (!line.startsWith("data:")) continue
+                                val payload = line.substring(5).trim()
+                                if (payload.isEmpty() || payload == "[DONE]") continue
+                                val j = try { JSONObject(payload) } catch (e: Exception) { continue }
+                                val delta = j.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("delta") ?: continue
+                                if (delta.isNull("content")) continue
+                                val t = delta.optString("content", "")
+                                if (t.isEmpty()) continue
+                                got = true
+                                onPiece(CHUNK, t)
+                            }
+                        }
+                        if (got) return null
+                        errs.add("OpenAI sent an empty answer.")
+                    } catch (e: java.net.UnknownHostException) {
+                        return "No internet connection."
+                    } catch (e: Exception) {
+                        if (got) return "The connection broke while answering: " + (e.message ?: "")
+                        errs.add("Could not reach OpenAI: " + (e.message ?: e.javaClass.simpleName))
+                    }
+                }
+                if (!discovered && modelProblem.isNotEmpty()) {
+                    discovered = true
+                    val d = discoverOpenAiModels(key).filter { it !in models }
+                    if (d.isNotEmpty()) {
+                        models = d
+                        continue
+                    }
+                }
+                if (modelProblem.isNotEmpty()) errs.add("OpenAI key ${ki + 1}: no model worked ($modelProblem). Set OPENAI_MODEL in GeminiConfig.kt to a model your account can use.")
+                continue@keyLoop
+            }
+        }
+        return errs.joinToString("\n").ifEmpty { "OpenAI failed." }
+    }
+ 
+    /** Tries OpenAI (ChatGPT) keys first when there are any, then Gemini keys. */
+    suspend fun stream(
+        subject: String,
+        question: String,
+        picture: Bitmap?,
+        onPiece: (Int, String) -> Unit,
+    ): String? = withContext(Dispatchers.IO) {
+        if (keys().isEmpty()) return@withContext "No API key yet. Open GeminiConfig.kt and put your key in OPENAI_KEY_1 (ChatGPT) or API_KEY_1 (Gemini)."
+        var any = false
+        val wrap: (Int, String) -> Unit = { k, t ->
+            any = true
+            onPiece(k, t)
+        }
+        val errs = ArrayList<String>()
+        if (openaiKeys().isNotEmpty()) {
+            val r = streamOpenAI(subject, question, picture, wrap) ?: return@withContext null
+            if (any) return@withContext r
+            errs.add(r)
+        }
+        if (geminiKeys().isNotEmpty()) {
+            val r = streamGemini(subject, question, picture, wrap) ?: return@withContext null
+            errs.add(r)
+        }
+        errs.joinToString("\n")
+    }
 }
-                                
-                              
+ 
+                            
