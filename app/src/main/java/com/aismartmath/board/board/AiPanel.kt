@@ -38,6 +38,7 @@ private val SUBJECTS = listOf(
     "Mathematics" to "➕ Mathematics",
     "Physics" to "⚛️ Physics",
     "Chemistry" to "🧪 Chemistry",
+    "Biology" to "🧬 Biology",
     "English" to "📖 English",
     "Auto" to "🔎 Any subject",
 )
@@ -46,6 +47,7 @@ private val HINTS = mapOf(
     "Mathematics" to "Type any maths question — solve, prove, find, limits, derivatives, graphs, triangles, MCQ…",
     "Physics" to "Type any physics question — numerical, theory, MCQ, assertion-reason…",
     "Chemistry" to "Type any chemistry question — reactions, mole concept, organic, MCQ…",
+    "Biology" to "Type any biology question — diagrams, processes, MCQ, long answers…",
     "English" to "Type any English question — grammar, tenses, voice, error spotting, MCQ…",
 )
 
@@ -152,8 +154,7 @@ fun AiPanel(state: BoardState) {
     var note by remember { mutableStateOf("") }
 
     fun ask() {
-        val s = subject
-        if (s == null) { note = "Pick a subject first."; return }
+        val s = subject ?: "Auto"
         if (text.isBlank()) { note = "Type the question first."; return }
         if (GeminiClient.keys().isEmpty()) { note = NO_KEY; return }
         note = ""
@@ -164,7 +165,7 @@ fun AiPanel(state: BoardState) {
         Modifier.fillMaxWidth().glass(RoundedCornerShape(12.dp), acc, 8.dp).padding(5.dp),
         verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
-        Text("🤖 Ask AI — pick a subject, type your question", color = Color.White, fontSize = 10.sp)
+        Text("🤖 Ask AI — type any question (a subject is optional)", color = Color.White, fontSize = 10.sp)
 
         FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             SUBJECTS.forEach { (id, label) ->
