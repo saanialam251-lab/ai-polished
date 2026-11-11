@@ -2728,7 +2728,7 @@ class BoardState(val topic: Topic, private val scope: CoroutineScope) {
             aiNames[fn[1]] = f.p[1]
         } else if (t == "circ") {                                 // ← NEW
             val cn = j.optString("name").trim()                   // ← NEW
-            if (cn.isNotEmpty()) aiMark(f.p[0], cn, f.col)    
+            if (cn.isNotEmpty()) aiMark(f.p[0], cn, f.col ?: Color(0xFFFB923C))    
         } else if (t == "pt") {
             val pn = j.optString("name").trim()
             if (pn.isNotEmpty()) {
