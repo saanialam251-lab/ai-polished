@@ -13,6 +13,6 @@ package com.aismartmath.board.board
  * GitHub. Use a private repository.
  */
 object GeminiConfig {
-    const val API_KEY_1 = ""
-    const val API_KEY_2 = ""
+    const val API_KEY_1 = "AQ.Ab8RN6LFKhDrPKZYgmfK0A3DLugzRlo_5KtrwGTJ8-SWmGkEvg"
+    const val API_KEY_2 = "AQ.Ab8RN6LAZQt74n2WZ37E_mX4srmhQPcnO7gHVQHvJev6aYZqUg"
 }
