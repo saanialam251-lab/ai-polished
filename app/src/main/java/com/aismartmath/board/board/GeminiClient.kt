@@ -200,7 +200,7 @@ Rules for the solution text:
                             if (!line.startsWith("data:")) continue
                             val payload = line.substring(5).trim()
                             if (payload.isEmpty() || payload == "[DONE]") continue
-                            val j = try { JSONObject(payload) }
+                            val j = try { JSONObject(payload) } catch (e: Exception) { continue }
                             val ps = j.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts") ?: continue
                             for (i in 0 until ps.length()) {
                                 val p = ps.getJSONObject(i)
