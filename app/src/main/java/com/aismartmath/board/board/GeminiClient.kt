@@ -27,8 +27,9 @@ object GeminiClient {
             "Mathematics" -> "Mathematics (arithmetic, algebra, quadratic equations, polynomials, triangles and geometry, mensuration, trigonometry, limits, derivatives, integrals, functions, graphs, probability, proofs)."
             "Physics" -> "Physics (mechanics, motion, forces, work-energy, waves, optics, heat, electricity, magnetism, modern physics). State the formula, substitute with units, give the final value with its unit."
             "Chemistry" -> "Chemistry (physical, organic, inorganic; mole concept, equations and balancing, equilibrium, thermodynamics, electrochemistry, kinetics, reactions and mechanisms). Show balanced equations and calculations with units."
+            "Biology" -> "Biology (cell biology, genetics, physiology, plants, ecology, evolution, human body, diagrams). Explain the process step by step and name every part and term correctly."
             "English" -> "English (grammar, tenses, voice, narration, error spotting, fill in the blanks, sentence correction, comprehension, vocabulary). Give the correct answer, then the rule behind it."
-            else -> "Mathematics, Physics, Chemistry and English. Work out the subject yourself."
+            else -> "any subject at all: Mathematics, Physics, Chemistry, Biology, English and everything else. Work out the subject yourself."
         }
         val pic = if (hasPicture) "\nThe student also sends a PICTURE of part of their board (and a short text description of the selected items). Read the picture carefully first, say what you see in the @think lines, then answer the doubt about it." else ""
         return """You are an expert, patient teacher of $focus$pic
@@ -127,18 +128,34 @@ Rules for the solution text:
         val ks = keys()
         if (ks.isEmpty()) return@withContext "No API key yet. Open GeminiConfig.kt and put your Gemini key in API_KEY_1."
         var last = "Could not reach Gemini."
+        val errs = ArrayList<String>()
         keyLoop@ for ((ki, key) in ks.withIndex()) {
+            if (key.length < 20 || key.any { it.isWhitespace() || it == '"' || it == '\'' }) {
+                errs.add("Key ${ki + 1} looks wrong: it is ${key.length} characters" +
+                    (if (key.any { it.isWhitespace() || it == '"' || it == '\'' }) " and contains a space, quote or line break" else " (too short)") +
+                    ". Copy the whole key again.")
+                continue@keyLoop
+            }
+            modeLoop@ for (mode in 0..2) {
             for (m in MODELS) {
                 var gotData = false
                 try {
-                    val url = URL("https://generativelanguage.googleapis.com/v1beta/models/$m:streamGenerateContent?alt=sse")
+                    // 0: Gemini API, key in the header. 1: Gemini API, key in the address. 2: Google Cloud (Vertex AI) address, which is where keys that start with AQ. made in Google Cloud work.
+                    val ek = java.net.URLEncoder.encode(key, "UTF-8")
+                    val url = URL(
+                        when (mode) {
+                            0 -> "https://generativelanguage.googleapis.com/v1beta/models/$m:streamGenerateContent?alt=sse"
+                            1 -> "https://generativelanguage.googleapis.com/v1beta/models/$m:streamGenerateContent?alt=sse&key=$ek"
+                            else -> "https://aiplatform.googleapis.com/v1/publishers/google/models/$m:streamGenerateContent?alt=sse&key=$ek"
+                        },
+                    )
                     val con = url.openConnection() as HttpURLConnection
                     con.requestMethod = "POST"
                     con.connectTimeout = 20000
                     con.readTimeout = 120000
                     con.doOutput = true
                     con.setRequestProperty("Content-Type", "application/json")
-                    con.setRequestProperty("x-goog-api-key", key)
+                    if (mode == 0) con.setRequestProperty("x-goog-api-key", key)
                     val parts = JSONArray().put(JSONObject().put("text", question))
                     if (picture != null) {
                         parts.put(JSONObject().put("inlineData", JSONObject().put("mimeType", "image/jpeg").put("data", toJpegBase64(picture))))
@@ -156,11 +173,12 @@ Rules for the solution text:
                         val msg = try { JSONObject(txt).getJSONObject("error").optString("message") } catch (e: Exception) { txt.take(160) }
                         val which = "key ${ki + 1}"
                         if (code == 429) {
-                            last = "Free limit reached on $which. " + (if (ki + 1 < ks.size) "Trying the next key…" else "Wait a minute and try again.")
+                            errs.add("Key ${ki + 1}: free limit reached. Wait a minute, or use the other key.")
                             continue@keyLoop
                         }
                         if (code == 400 && msg.contains("API key", ignoreCase = true) || code == 401 || code == 403) {
-                            last = "Gemini refused $which: $msg\nCheck the keys in GeminiConfig.kt."
+                            if (mode < 2) continue@modeLoop
+                            errs.add("Key ${ki + 1} refused by Google: $msg")
                             continue@keyLoop
                         }
                         last = "Gemini error $code: $msg"
@@ -192,7 +210,9 @@ Rules for the solution text:
                     last = "Could not reach Gemini: " + (e.message ?: e.javaClass.simpleName)
                 }
             }
+            break@modeLoop
+            }
         }
-        last
+        if (errs.isNotEmpty() && last == "Could not reach Gemini.") errs.joinToString("\n") + "\nCheck the keys in GeminiConfig.kt." else last
     }
 }
