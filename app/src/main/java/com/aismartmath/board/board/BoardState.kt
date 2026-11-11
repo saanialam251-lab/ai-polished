@@ -2581,7 +2581,7 @@ class BoardState(val topic: Topic, private val scope: CoroutineScope) {
         val born = System.nanoTime() + (aiCount++)
 
         if (type in setOf("path", "arc", "ellipse", "curve")) return aiInk(type, j, p, born)
-        if (type in setOf("join", "midpoint", "perp", "bisector", "parallel", "extend", "circum", "incircle")) return aiConstruct(type, j)
+        if (type in setOf("join", "midpoint", "perp", "bisector", "parallel", "extend", "circum", "incircle", "intersect", "tangent", "anglemark", "rightmark")) return aiConstruct(type, j)
 
         if (type == "graph") {
             val before = shapes.size
@@ -2726,6 +2726,9 @@ class BoardState(val topic: Topic, private val scope: CoroutineScope) {
         } else if (fn != null && t == "seg" && fn.length == 2) {
             aiNames[fn[0]] = f.p[0]
             aiNames[fn[1]] = f.p[1]
+        } else if (t == "circ") {                                 // ← NEW
+            val cn = j.optString("name").trim()                   // ← NEW
+            if (cn.isNotEmpty()) aiMark(f.p[0], cn, f.col)    
         } else if (t == "pt") {
             val pn = j.optString("name").trim()
             if (pn.isNotEmpty()) {
@@ -3098,6 +3101,80 @@ class BoardState(val topic: Topic, private val scope: CoroutineScope) {
                 val end = Pt(from.x + (from.x - other.x) / l * by, from.y + (from.y - other.y) / l * by)
                 aiSegment(from, end, null, col)
                 if (name.isNotEmpty()) aiMark(end, name, col)
+                return true
+            }
+            "intersect" -> {
+                val a = pt("a", 0) ?: return false
+                val b = pt("a", 1) ?: return false
+                val c = pt("b", 0) ?: return false
+                val d = pt("b", 1) ?: return false
+                val r1x = b.x - a.x
+                val r1y = b.y - a.y
+                val r2x = d.x - c.x
+                val r2y = d.y - c.y
+                val den = r1x * r2y - r1y * r2x
+                if (abs(den) < 1e-12) return false
+                val t = ((c.x - a.x) * r2y - (c.y - a.y) * r2x) / den
+                aiMark(Pt(a.x + t * r1x, a.y + t * r1y), name, col)
+                return true
+            }
+            "tangent" -> {
+                val p0 = pt("at", 0) ?: return false
+                val o = pt("center", 0) ?: return false
+                val rr = dist(p0, o)
+                if (rr < 1e-9) return false
+                val tx = -(p0.y - o.y) / rr
+                val ty = (p0.x - o.x) / rr
+                val half = j.optDouble("len", 1.6 * rr).coerceIn(0.1 * rr, 8 * rr) / 2
+                val e1 = Pt(p0.x - tx * half, p0.y - ty * half)
+                val e2 = Pt(p0.x + tx * half, p0.y + ty * half)
+                val ends = j.optString("ends")
+                if (ends.length == 2) {
+                    aiSegment(e1, e2, ends, col)
+                    aiMark(e1, ends.substring(0, 1), col)
+                    aiMark(e2, ends.substring(1, 2), col)
+                } else {
+                    aiSegment(e1, e2, null, col)
+                }
+                return true
+            }
+            "anglemark", "rightmark" -> {
+                val v = pt("at", 0) ?: return false
+                val a = pt("arms", 0) ?: return false
+                val c = pt("arms", 1) ?: return false
+                val la = dist(v, a)
+                val lc = dist(v, c)
+                if (la < 1e-9 || lc < 1e-9) return false
+                val a0 = atan2(a.y - v.y, a.x - v.x)
+                var sw = atan2(c.y - v.y, c.x - v.x) - a0
+                while (sw > PI) sw -= 2 * PI
+                while (sw < -PI) sw += 2 * PI
+                val pathPts = ArrayList<Pt>()
+                val mark: Color = aiColor(j.optString("color")) ?: Color(0xFFFBBF24)
+                val labelAt: Pt
+                if (type == "rightmark") {
+                    val sz = j.optDouble("r", 0.14 * minOf(la, lc))
+                    val u = Pt((a.x - v.x) / la, (a.y - v.y) / la)
+                    val w = Pt((c.x - v.x) / lc, (c.y - v.y) / lc)
+                    pathPts.add(Pt(v.x + u.x * sz, v.y + u.y * sz))
+                    pathPts.add(Pt(v.x + (u.x + w.x) * sz, v.y + (u.y + w.y) * sz))
+                    pathPts.add(Pt(v.x + w.x * sz, v.y + w.y * sz))
+                    labelAt = Pt(v.x + (u.x + w.x) * sz * 1.5, v.y + (u.y + w.y) * sz * 1.5)
+                } else {
+                    val rad = j.optDouble("r", 0.2 * minOf(la, lc)).coerceAtLeast(1e-6)
+                    for (i in 0..24) {
+                        val an = a0 + sw * i / 24
+                        pathPts.add(Pt(v.x + rad * cos(an), v.y + rad * sin(an)))
+                    }
+                    val mid = a0 + sw / 2
+                    labelAt = Pt(v.x + rad * 1.9 * cos(mid), v.y + rad * 1.9 * sin(mid))
+                }
+                val f = Fig("ink", pathPts, System.nanoTime() + (aiCount++))
+                f.col = mark
+                f.inkW = 3.0
+                aiAdd(f)
+                val tx = j.optString("text").take(12)
+                if (tx.isNotBlank()) aiLabel(Pt(labelAt.x - aiFont * 0.4, labelAt.y - aiFont * 1.8), tx)
                 return true
             }
             "circum", "incircle" -> {
