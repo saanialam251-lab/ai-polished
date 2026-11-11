@@ -1,0 +1,57 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.9
+
+      - name: Accept Android SDK licences
+        run: yes | sdkmanager --licenses > /dev/null || true
+
+      - name: Build debug APK
+        run: |
+          set +e
+          gradle assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            {
+              echo "## Build failed - copy these lines and send them to Claude"
+              echo '```'
+              grep -E "^e: |error:|What went wrong|Execution failed|Could not|Unresolved|AAPT" build.log | head -40
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit $status
+
+      - name: Name the APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk smart-math-board.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smart-math-board-apk
+          path: smart-math-board.apk
+          if-no-files-found: error
+
+      - name: Keep the build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          if-no-files-found: ignore
